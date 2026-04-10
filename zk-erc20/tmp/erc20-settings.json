@@ -1,0 +1,24 @@
+{
+  "evmVersion": "paris",
+  "optimizer": {
+    "enabled": true,
+    "mode": "3"
+  },
+  "outputSelection": {
+    "*": {
+      "*": [
+        "abi",
+        "evm.methodIdentifiers",
+        "metadata"
+      ],
+      "": [
+        "ast"
+      ]
+    }
+  },
+  "detectMissingLibraries": false,
+  "forceEVMLA": false,
+  "enableEraVMExtensions": false,
+  "codegen": "yul",
+  "libraries": {}
+}

@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>zkSync Sponsored Mint</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #111b2e;
+      --line: #253352;
+      --text: #dbe7ff;
+      --muted: #9cb1d9;
+      --accent: #31c48d;
+      --danger: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(1200px 600px at 0% -10%, #1a2a4a 0%, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+    .card {
+      width: 100%;
+      max-width: 720px;
+      background: linear-gradient(180deg, #131f37 0%, var(--panel) 100%);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px;
+    }
+    h1 { margin: 0 0 12px; font-size: 22px; }
+    p { margin: 8px 0; color: var(--muted); }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    label { font-size: 13px; color: var(--muted); }
+    input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #0b1425;
+      color: var(--text);
+      padding: 10px 12px;
+      outline: none;
+    }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 600;
+      cursor: pointer;
+      color: #07131f;
+      background: var(--accent);
+    }
+    button.secondary { background: #8fb3ff; }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
+    .ok { color: var(--accent); }
+    .err { color: var(--danger); }
+    .box {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #0a1222;
+      padding: 10px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 88px;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>zkSync Sponsored getFreeTokens</h1>
+    <p>Calls <span class="mono">getFreeTokens(uint256)</span> on your token using a paymaster-sponsored tx (EIP-712 type 113).</p>
+
+    <div class="grid">
+      <div>
+        <label for="token">Token Address</label>
+        <input id="token" value="0x687600738C17e38641b6a850C6728D086fEeF2b4" />
+      </div>
+      <div>
+        <label for="paymaster">Paymaster Address</label>
+        <input id="paymaster" value="0xE7526a8967568214b77e19D25b5B91F640055420" />
+      </div>
+      <div>
+        <label for="amount">Amount (human units)</label>
+        <input id="amount" value="1" />
+      </div>
+      <div>
+        <label for="recipient">Recipient Address</label>
+        <input id="recipient" placeholder="0x..." />
+      </div>
+      <div>
+        <label for="gasLimit">Gas Limit (must be <= paymaster max, currently 2000000)</label>
+        <input id="gasLimit" value="1900000" />
+      </div>
+    </div>
+
+    <div class="row">
+      <button id="connectBtn" class="secondary">Connect Wallet</button>
+      <button id="relayerMintBtn">Mint Tokens</button>
+    </div>
+
+    <p id="account" class="mono"></p>
+    <p id="status"></p>
+    <div id="output" class="box mono">Ready.</div>
+  </main>
+
+  <script type="module">
+    import { ethers } from 'https://esm.sh/ethers@6.14.0';
+
+    const CHAIN_ID_HEX = '0x12c'; // zkSync Era Sepolia = 300
+    const GAS_PER_PUBDATA_HEX = '0xc350'; // 50000
+
+    const tokenEl = document.getElementById('token');
+    const paymasterEl = document.getElementById('paymaster');
+    const amountEl = document.getElementById('amount');
+    const recipientEl = document.getElementById('recipient');
+    const gasLimitEl = document.getElementById('gasLimit');
+    const connectBtn = document.getElementById('connectBtn');
+    const relayerMintBtn = document.getElementById('relayerMintBtn');
+    const accountEl = document.getElementById('account');
+    const statusEl = document.getElementById('status');
+    const outputEl = document.getElementById('output');
+
+    const erc20Iface = new ethers.Interface([
+      'function decimals() view returns (uint8)',
+      'function getFreeTokens(uint256 amount)'
+    ]);
+    const paymasterFlowIface = new ethers.Interface([
+      'function general(bytes input)'
+    ]);
+
+    let account = null;
+
+    function setStatus(text, kind = 'ok') {
+      statusEl.textContent = text;
+      statusEl.className = kind === 'err' ? 'err' : 'ok';
+    }
+
+    function setOutput(value) {
+      outputEl.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    }
+
+    async function ensureNetwork() {
+      const current = await window.ethereum.request({ method: 'eth_chainId' });
+      if (current === CHAIN_ID_HEX) return;
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: CHAIN_ID_HEX }]
+      });
+    }
+
+    async function connect() {
+      if (!window.ethereum) {
+        throw new Error('No wallet detected. Install MetaMask/Rabby and reload.');
+      }
+      await ensureNetwork();
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      account = accounts[0];
+      accountEl.textContent = `Connected: ${account}`;
+      recipientEl.value = account;
+      setStatus('Wallet connected');
+    }
+
+    async function sponsoredMint() {
+      if (!account) throw new Error('Connect wallet first.');
+
+      const token = tokenEl.value.trim();
+      const paymaster = paymasterEl.value.trim();
+      const amountHuman = amountEl.value.trim();
+      const gasLimit = BigInt(gasLimitEl.value.trim());
+
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const decimalsContract = new ethers.Contract(token, erc20Iface.fragments, provider);
+      const decimals = await decimalsContract.decimals();
+      const amountWei = ethers.parseUnits(amountHuman, Number(decimals));
+
+      const data = erc20Iface.encodeFunctionData('getFreeTokens', [amountWei]);
+      const paymasterInput = paymasterFlowIface.encodeFunctionData('general', ['0x']);
+
+      const gasPriceHex = await window.ethereum.request({ method: 'eth_gasPrice' });
+
+      const tx = {
+        from: account,
+        to: token,
+        data,
+        type: '0x71',
+        gas: ethers.toBeHex(gasLimit),
+        maxFeePerGas: gasPriceHex,
+        maxPriorityFeePerGas: '0x0',
+        eip712Meta: {
+          gasPerPubdata: GAS_PER_PUBDATA_HEX,
+          paymasterParams: {
+            paymaster,
+            paymasterInput
+          }
+        }
+      };
+
+      setOutput({ submittingTx: tx });
+      const txHash = await window.ethereum.request({ method: 'eth_sendTransaction', params: [tx] });
+      setStatus('Transaction submitted');
+      setOutput({ txHash, explorer: `https://sepolia.explorer.zksync.io/tx/${txHash}` });
+    }
+
+    connectBtn.addEventListener('click', async () => {
+      try {
+        await connect();
+      } catch (err) {
+        setStatus(err.message || String(err), 'err');
+      }
+    });
+
+    relayerMintBtn.addEventListener('click', async () => {
+      try {
+        const token = tokenEl.value.trim();
+        const paymaster = paymasterEl.value.trim();
+        const amountHuman = amountEl.value.trim();
+        const recipient = recipientEl.value.trim();
+        const gasLimit = gasLimitEl.value.trim();
+
+        if (!ethers.isAddress(recipient)) {
+          throw new Error('Recipient must be a valid address.');
+        }
+
+        setStatus('Submitting relayer-sponsored mint...');
+        const res = await fetch('/api/relayer-mint', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tokenAddress: token,
+            paymasterAddress: paymaster,
+            recipient,
+            amountHuman,
+            gasLimit
+          })
+        });
+
+        const payload = await res.json();
+        if (!res.ok) {
+          throw new Error(payload.error || 'Relayer request failed');
+        }
+
+        setStatus('Relayer mint complete');
+        setOutput({
+          recipient,
+          amountHuman,
+          relayer: payload.relayer,
+          mintTxHash: payload.mintTxHash,
+          transferTxHash: payload.transferTxHash,
+          explorerMint: `https://sepolia.explorer.zksync.io/tx/${payload.mintTxHash}`,
+          explorerTransfer: `https://sepolia.explorer.zksync.io/tx/${payload.transferTxHash}`
+        });
+      } catch (err) {
+        setStatus(err.message || String(err), 'err');
+      }
+    });
+
+  </script>
+</body>
+</html>

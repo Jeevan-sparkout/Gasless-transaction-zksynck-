@@ -1,51 +1,81 @@
-# ZKsync Hardhat project template
+# zk-erc20 (zkSync Era Sepolia)
 
-This project was scaffolded with [zksync-cli](https://github.com/matter-labs/zksync-cli).
+ERC20 + paymaster example project on zkSync Era Sepolia with:
+- `MyERC20Token` token contract (`getFreeTokens(uint256)` mint function)
+- `GaslessSponsoredPaymaster` paymaster contract
+- local backend-relayer UI for gasless mint UX
 
-## Project Layout
+## Contracts (current deployment)
 
-- `/contracts`: Contains solidity smart contracts.
-- `/deploy`: Scripts for contract deployment and interaction.
-- `/test`: Test files.
-- `hardhat.config.ts`: Configuration settings.
+- `MyERC20Token`: `0x687600738C17e38641b6a850C6728D086fEeF2b4`
+- `GaslessSponsoredPaymaster`: `0xE7526a8967568214b77e19D25b5B91F640055420`
 
-## How to Use
+## Prerequisites
 
-- `npm run compile`: Compiles contracts.
-- `npm run deploy`: Deploys using script `/deploy/deploy.ts`.
-- `npm run interact`: Interacts with the deployed contract using `/deploy/interact.ts`.
-- `npm run test`: Tests the contracts.
+- Node.js 18+
+- npm
+- funded paymaster balance on zkSync Era Sepolia
+- `.env` with:
 
-Note: Both `npm run deploy` and `npm run interact` are set in the `package.json`. You can also run your files directly, for example: `npx hardhat deploy-zksync --script deploy.ts`
-
-### Environment Settings
-
-To keep private keys safe, this project pulls in environment variables from `.env` files. Primarily, it fetches the wallet's private key.
-
-Rename `.env.example` to `.env` and fill in your private key:
-
-```
-WALLET_PRIVATE_KEY=your_private_key_here...
+```bash
+WALLET_PRIVATE_KEY=0x...
+# optional
+RPC_URL=https://sepolia.era.zksync.dev
+RELAYER_HOST=127.0.0.1
+RELAYER_PORT=8787
 ```
 
-### Network Support
+## Core Commands
 
-`hardhat.config.ts` comes with a list of networks to deploy and test contracts. Add more by adjusting the `networks` section in the `hardhat.config.ts`. To make a network the default, set the `defaultNetwork` to its name. You can also override the default using the `--network` option, like: `hardhat test --network dockerizedNode`.
+- `npm run compile`
+- `npm run deploy`
+- `npm run relayer-ui`
 
-### Local Tests
+## Backend Relayer UI (recommended for current wallet limitations)
 
-Running `npm run test` by default runs the [ZKsync In-memory Node](https://docs.zksync.io/build/test-and-debug/in-memory-node) provided by the [@matterlabs/hardhat-zksync-node](https://docs.zksync.io/build/tooling/hardhat/hardhat-zksync-node) tool.
+Some wallet extensions reject zkSync EIP-712 envelope `0x71` directly in browser contract-write UIs.  
+This project includes a backend relayer flow that avoids that limitation.
 
-Important: ZKsync In-memory Node currently supports only the L2 node. If contracts also need L1, use another testing environment like Dockerized Node. Refer to [test documentation](https://docs.zksync.io/build/test-and-debug) for details.
+### Start UI + relayer server
 
-## Useful Links
+```bash
+cd /home/sparkout/Desktop/zksynck/zk-erc20
+npm run relayer-ui
+```
 
-- [Docs](https://docs.zksync.io/build)
-- [Official Site](https://zksync.io/)
-- [GitHub](https://github.com/matter-labs)
-- [Twitter](https://twitter.com/zksync)
-- [Discord](https://join.zksync.dev/)
+Open:
+
+- `http://127.0.0.1:8787/`
+
+### UI flow
+
+1. Click `Connect Wallet`
+2. Set token/paymaster/amount/recipient/gas limit
+3. Click `Relayer Mint`
+
+What happens:
+
+1. Backend signs sponsored `getFreeTokens(amount)` using relayer wallet from `.env`
+2. Backend signs sponsored `transfer(recipient, amount)` to deliver minted tokens
+3. UI shows both tx hashes
+
+## Scripts
+
+- `scripts/get-free-tokens-sponsored.js`  
+  Direct sponsored mint from CLI (no browser dependency). Useful fallback for debugging.
+
+- `scripts/deploy-gasless-and-token.ts`  
+  Deploy paymaster + token flow.
+
+- `scripts/verify-zksync-contract.sh`  
+  Explorer verification helper.
+
+## Notes
+
+- `GaslessSponsoredPaymaster.maxGasLimitPerTx` is enforced. Keep tx gas limit under that value.
+- If paymaster balance is low, sponsorship fails in validation.
+- If you change wallet/private key in `.env`, restart the relayer server.
 
 ## License
 
-This project is under the [MIT](./LICENSE) license.
+MIT. See [LICENSE](./LICENSE).

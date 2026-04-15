@@ -10,6 +10,7 @@
     "deploy-erc20": "hardhat run ./scripts/deploy-erc20.ts",
     "deploy-nft": "hardhat run ./scripts/deploy-nft.ts",
     "interact": "hardhat run ./scripts/interact.ts",
+    "relayer-ui": "node ./paymaster-wallet/relayer-server.js",
     "compile": "hardhat compile",
     "clean": "hardhat clean",
     "test": "hardhat test --network hardhat"

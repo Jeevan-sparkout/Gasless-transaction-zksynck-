@@ -120,7 +120,19 @@ jq '.input.settings' "$BUILD_INFO" > "$TMP_DIR/compiler-settings.json"
 COMPILER_SOLC_VERSION="$(jq -r '.solcVersion' "$BUILD_INFO")"
 [[ -n "$COMPILER_SOLC_VERSION" && "$COMPILER_SOLC_VERSION" != "null" ]] || die "solcVersion not found in build-info"
 
-ZK_VERSION="$(jq -r '.output.contracts | to_entries[] | .value | to_entries[] | .value.metadata.zk_version // empty' "$BUILD_INFO" | head -n 1)"
+ZK_VERSION="$(
+  jq -r '
+    .output.contracts
+    | to_entries[]
+    | .value
+    | to_entries[]
+    | .value.metadata
+    | (
+        if type == "string" then (fromjson? // {}) else . end
+      )
+    | .zk_version // empty
+  ' "$BUILD_INFO" | head -n 1
+)"
 [[ -n "$ZK_VERSION" ]] || die "zk_version not found in build-info metadata"
 
 COMPILER_ZKSOLC_VERSION="v${ZK_VERSION}"
